@@ -1,0 +1,20 @@
+global:
+  ssl: false
+  #remoteRepository: localhost
+
+traefik:
+  enabled: false
+artifactory:
+  enabled: false
+k8ssandra:
+  enabled: false
+fsmpekkokafka:
+  enabled: false
+elasticsearch:
+  enabled: false
+nexus:
+  enabled: false
+metrics-server:
+  enabled: false
+fsm-akka-4eyes-application:
+  enabled: false

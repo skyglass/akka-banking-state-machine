@@ -1,0 +1,1437 @@
+import java.util.regex.Pattern
+
+buildscript {
+    repositories {
+        mavenCentral()
+        mavenLocal()
+        maven { url "https://repo.spring.io/snapshot" }
+        maven { url "https://repo.spring.io/milestone" }
+        maven { url "https://plugins.gradle.org/m2/"}
+        maven { url "https://oss.sonatype.org/content/repositories/snapshots"}
+    }
+
+    dependencies {
+        classpath "org.springframework.boot:spring-boot-gradle-plugin:2.6.4"
+        classpath "io.freefair.gradle:lombok-plugin:6.4.3"
+        classpath "org.xtext:xtext-gradle-plugin:2.0.9-alpha.3"
+        classpath "com.diffplug.spotless:spotless-plugin-gradle:5.14.0"
+        classpath 'org.asciidoctor:asciidoctor-gradle-jvm:3.2.0'
+        classpath 'org.asciidoctor:asciidoctor-gradle-jvm-gems:3.2.0'
+        classpath "com.cosminpolifronie.gradle:gradle-plantuml-plugin:1.6.0"
+        classpath 'com.google.protobuf:protobuf-gradle-plugin:0.8.18'
+        classpath "org.unbroken-dome.gradle-plugins.helm:helm-plugin:1.7.0"
+        classpath "org.unbroken-dome.gradle-plugins.helm:helm-publish-plugin:1.7.0"
+    }
+}
+
+plugins {
+    id 'java'
+    id 'java-library'
+    id 'idea'
+    id 'org.springframework.boot' version '2.6.7'
+    id 'com.google.cloud.tools.jib' version '3.2.1'
+}
+
+
+allprojects {
+    apply plugin: 'io.spring.dependency-management'
+
+    def scalaVersion = System.getProperty('scala.version', '2.13.8')
+    def scalaMajorVersion = toMajorVersion(scalaVersion)
+    def scala3Version = System.getProperty('scala.version', '3.3.0')
+    def scala3MajorVersion = '3'
+    ext.versions = [
+            aspectjVersion          : "1.9.9.1",
+            cassandraPlugin         : "1.0.5",
+            confluent               : "6.1.0",
+            lombok                  : "1.18.24",
+            pekko                   : System.getProperty('pekko.version', '1.0.1'),
+            //pekkoCassandraPlugin    : System.getProperty('pekkoCassandraPlugin.version', '0.0.0-1088-aa545416-SNAPSHOT'),
+            pekkoCassandraPlugin    : System.getProperty('pekkoCassandraPlugin.version', '1.0.0'),
+            //pekkoConnectorsAll      : System.getProperty('pekkoConnectorsAll.version', '0.0.0+2779-5b038c8d-SNAPSHOT'),
+            pekkoConnectorsAll      : System.getProperty('pekkoConnectorsAll.version', '1.0.0'),
+            //pekkoConnectors         : System.getProperty('pekkoConnectors.version', '1.0.0-RC1'),
+            pekkoConnectors         : System.getProperty('pekkoConnectors.version', '1.0.0'),
+            //pekkomanagement         : System.getProperty('pekkomanagement.version', '0.0.0+740-92e35ae0-SNAPSHOT'),
+            pekkomanagement         : System.getProperty('pekkomanagement.version', '1.0.0'),
+            //pekkohttp               : System.getProperty('pekkoHttp.version', '0.0.0+4418-546e7912+20230531-0937-SNAPSHOT'),
+            pekkohttp               : System.getProperty('pekkoHttp.version', '1.0.0'),
+            //pekkoProjections        : System.getProperty('pekkoProjections.version', '0.0.0+611-0e855a60-SNAPSHOT'),
+            pekkoProjections        : System.getProperty('pekkoProjections.version', '1.0.0'),
+            //pekkoKafkaStream        : System.getProperty('pekkoProjections.version', '0.0.0+1738-07a19b8e-SNAPSHOT'),
+            pekkoKafkaStream        : System.getProperty('pekkoProjections.version', '1.0.0'),
+            scala                   : [major: scalaMajorVersion, current: scalaVersion],
+            scala3                  : [major: scala3MajorVersion, current: scala3Version],
+            scalikeJdbcVersion      : "3.5.0",
+            xtext                   : "2.25.0"
+    ]
+
+    dependencyManagement {
+        imports {
+            mavenBom org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES
+            mavenBom 'org.springframework.cloud:spring-cloud-dependencies:2021.0.1'
+            mavenBom 'org.springframework.data:spring-data-bom:2021.1.2'
+            mavenBom "org.eclipse.xtext:xtext-dev-bom:${versions.xtext}"
+        }
+    }
+
+    group 'org.salgar.pekko.fsm'
+    version '1.0-SNAPSHOT'
+
+    repositories {
+        maven { url "https://repo.spring.io/snapshot" }
+        maven { url "https://repo.spring.io/milestone" }
+        maven { url "https://packages.confluent.io/maven/"}
+        maven { url "https://oss.sonatype.org/content/repositories/snapshots"}
+        maven { url "https://repository.apache.org/content/groups/staging/" }
+        mavenLocal()
+        mavenCentral()
+    }
+
+    sourceCompatibility = '1.8'
+
+    idea {
+        module {
+            downloadJavadoc = true
+            downloadSources = true
+        }
+    }
+
+    jar {
+        manifest {
+            attributes 'Implementation-Title': project.archivesBaseName,
+                    'Implementation-Version': project.version
+        }
+    }
+    bootJar {
+        enabled = false
+    }
+}
+
+subprojects {
+    task allDeps(type: DependencyReportTask) {}
+
+    ext {
+        flag = true
+    }
+
+    if(ext.flag) {
+        ext.props = [
+                SEED_NODES: property('SEED_NODES'),
+                K8SSANDRA_PASSWORD: property('K8SSANDRA_PASSWORD'),
+                DOCKER_HUB_USER: property('DOCKER_HUB_USER'),
+                DOCKER_HUB_PASSWORD: property('DOCKER_HUB_PASSWORD'),
+                DOCKER_UPLOAD_USER: property('DOCKER_UPLOAD_USER'),
+                DOCKER_UPLOAD_PASSWORD: property('DOCKER_UPLOAD_PASSWORD'),
+                HELM_USER: property('HELM_USER'),
+                HELM_PASSWORD: property('HELM_PASSWORD')
+        ]
+    }
+}
+
+project(':4eyes-address-check-api') {
+    apply plugin: 'java'
+    apply plugin: 'io.freefair.lombok'
+
+    dependencies {
+        implementation 'org.projectlombok:lombok'
+        implementation 'com.fasterxml.jackson.core:jackson-databind'
+    }
+}
+
+project(':4eyes-address-check-impl') {
+    apply plugin: 'org.springframework.boot'
+    apply plugin: 'java'
+    apply plugin: 'io.freefair.lombok'
+    apply plugin: 'java-library'
+
+    dependencies {
+        api project(':4eyes-address-check-api')
+        api 'org.springframework:spring-context'
+        api 'org.slf4j:slf4j-api'
+    }
+    bootJar {
+        enabled = false
+    }
+}
+
+project(':4eyes-credit-score-api') {
+    apply plugin: 'java'
+    apply plugin: 'io.freefair.lombok'
+
+    dependencies {
+        implementation 'org.projectlombok:lombok'
+        implementation 'com.fasterxml.jackson.core:jackson-databind'
+    }
+}
+
+project(':4eyes-credit-score-impl') {
+    apply plugin: 'org.springframework.boot'
+    apply plugin: 'java'
+    apply plugin: 'io.freefair.lombok'
+    apply plugin: 'java-library'
+
+    dependencies {
+        api project(':4eyes-credit-score-api')
+        api 'org.springframework:spring-context'
+        api 'org.slf4j:slf4j-api'
+    }
+    bootJar {
+        enabled = false
+    }
+}
+
+project(':4eyes-fraud-prevention-api') {
+    apply plugin: 'java'
+    apply plugin: 'io.freefair.lombok'
+
+    dependencies {
+        implementation 'org.projectlombok:lombok'
+        implementation 'com.fasterxml.jackson.core:jackson-databind'
+    }
+}
+
+project(':4eyes-fraud-prevention-impl') {
+    apply plugin: 'org.springframework.boot'
+    apply plugin: 'java'
+    apply plugin: 'io.freefair.lombok'
+    apply plugin: 'java-library'
+
+    dependencies {
+        api project(':4eyes-fraud-prevention-api')
+        api 'org.springframework:spring-context'
+        api 'org.slf4j:slf4j-api'
+    }
+    bootJar {
+        enabled = false
+    }
+}
+
+project(':4eyes-notifier-api') {
+    apply plugin: 'java'
+    apply plugin: 'io.freefair.lombok'
+
+    dependencies {
+        implementation 'org.projectlombok:lombok'
+        implementation 'com.fasterxml.jackson.core:jackson-databind'
+    }
+}
+
+project(':4eyes-notifier-impl') {
+    apply plugin: 'org.springframework.boot'
+    apply plugin: 'java'
+    apply plugin: 'io.freefair.lombok'
+    apply plugin: 'java-library'
+
+    dependencies {
+        api project(':4eyes-notifier-api')
+        api 'org.springframework:spring-context'
+        api 'org.slf4j:slf4j-api'
+    }
+    bootJar {
+        enabled = false
+    }
+}
+
+project(':customer-relationship-adapter') {
+    apply plugin: 'java-library'
+    apply plugin: 'java'
+    apply plugin: 'io.freefair.lombok'
+
+    dependencies {
+        implementation 'org.projectlombok:lombok'
+    }
+}
+
+project(':customer-relationship-adapter-impl') {
+    apply plugin: 'org.springframework.boot'
+    apply plugin: 'java-library'
+    apply plugin: 'java'
+    apply plugin: 'io.freefair.lombok'
+
+    dependencies {
+        api project(':customer-relationship-adapter')
+        api 'org.springframework:spring-context'
+        api 'org.slf4j:slf4j-api'
+    }
+    bootJar {
+        enabled = false
+    }
+}
+
+project(':fsm-pekko-api') {
+    apply plugin: 'java'
+    apply plugin: 'java-library'
+
+    dependencies {
+        implementation "org.apache.pekko:pekko-actor-typed_${versions.scala.major}:${versions.pekko}"
+        implementation "org.apache.pekko:pekko-persistence-typed_${versions.scala.major}:${versions.pekko}"
+        implementation 'org.projectlombok:lombok'
+    }
+}
+
+project(':fsm-pekko-4eyes-advice') {
+    apply plugin: 'java'
+
+    configurations {
+        ajc
+        aspects
+        aspectsImplementation {
+            extendsFrom implementation
+            canBeResolved=true
+        }
+        implementation {
+            extendsFrom aspects
+        }
+        tests {
+            extendsFrom testImplementation
+        }
+    }
+
+    ant.lifecycleLogLevel = "INFO"
+
+    compileJava {
+        sourceCompatibility="1.8"
+        targetCompatibility="1.8"
+
+        dependsOn configurations.ajc.getTaskDependencyFromProjectDependency(true, "compileJava")
+
+        doLast{
+            ant.taskdef(
+                    resource:"org/aspectj/tools/ant/taskdefs/aspectjTaskdefs.properties",
+                    classpath: configurations.ajc.asPath)
+            ant.iajc(
+                    source: "1.8",
+                    target: "1.8",
+                    showWeaveInfo: "true",
+                    destDir: sourceSets.main.java.classesDirectory.get().asFile.path,
+                    maxmem: "512m",
+                    fork: "true",
+                    classpath: configurations.aspectsImplementation.asPath)
+                    {
+                        sourceroots {
+                            sourceSets.main.java.srcDirs.each {
+                                pathelement(location: it.absolutePath)
+                            }
+                        }
+                    }
+        }
+    }
+
+    dependencies {
+        ajc "org.aspectj:aspectjtools:${versions.aspectjVersion}"
+        implementation "org.aspectj:aspectjrt:${versions.aspectjVersion}"
+
+        implementation "org.apache.pekko:pekko-actor-typed_${versions.scala.major}:${versions.pekko}"
+        implementation "org.apache.pekko:pekko-persistence-typed_${versions.scala.major}:${versions.pekko}"
+
+        implementation "ch.qos.logback:logback-classic"
+    }
+}
+
+project(':fsm-pekko-base') {
+    apply plugin: 'scala'
+    apply plugin: 'java-library'
+
+    dependencies {
+        implementation "org.scala-lang:scala-library:${versions.scala.current}"
+        api project(':fsm-pekko-api')
+        api "org.apache.pekko:pekko-actor-typed_${versions.scala.major}:${versions.pekko}"
+        api "org.apache.pekko:pekko-persistence-typed_${versions.scala.major}:${versions.pekko}"
+        api "com.chuusai:shapeless_${versions.scala.major}:2.3.3"
+        api "org.springframework:spring-context"
+        api "javax.annotation:javax.annotation-api:1.3.2"
+    }
+}
+
+project(':fsm-pekko-xtext-reader') {
+    apply plugin: 'java'
+
+    dependencies {
+        implementation "org.eclipse.xtext:org.eclipse.xtext:${versions.xtext}"
+        implementation "org.eclipse.xtext:org.eclipse.xtext.xbase:${versions.xtext}"
+        implementation "org.eclipse.xtext:org.eclipse.xtext.xtext.generator:${versions.xtext}"
+    }
+}
+
+project(':fsm-pekko-xtend') {
+    apply plugin: 'java'
+    apply plugin: 'org.xtext.xtend'
+
+    sourceSets.main.java.srcDirs = ['src/main/java']
+
+    dependencies {
+        implementation 'org.salgar.pekko.fsm:fsm-pekko-eclipse-dependencies:1.0.0-SNAPSHOT:repackaged'
+        implementation "org.eclipse.xtend:org.eclipse.xtend.lib:${versions.xtext}"
+        implementation "org.eclipse.xtext:org.eclipse.xtext:${versions.xtext}"
+    }
+}
+
+project(':fsm-pekko-4eyes-uml-model') {
+    apply plugin: 'java'
+
+    dependencies {
+
+    }
+}
+
+project(':fsm-pekko-4eyes-model') {
+    apply plugin: 'java'
+    apply plugin: 'org.xtext.xtend'
+    apply plugin: 'io.freefair.lombok'
+    apply plugin: 'com.diffplug.spotless'
+
+    sourceSets {
+        main {
+            java {
+                srcDirs = ['src/main/java', 'build/generated-sources/main/java']
+            }
+        }
+    }
+
+    dependencies {
+        implementation 'org.projectlombok:lombok'
+    }
+
+    spotless {
+        java {
+            target '**/*.java'
+            //licenseHeaderFile  "$rootDir/buildSrc/CopyrightHeader.java"
+            importOrder 'java', 'javax', 'org', 'com'
+            //eclipseFormatFile "$rootDir/buildSrc/formatter.xml"
+        }
+        format 'misc', {
+            target 'src/**/*.md', 'src/**/*.xml', 'src/**/*.xsd', 'src/**/*.xsl'
+            indentWithSpaces()
+            trimTrailingWhitespace()
+            endWithNewline()
+        }
+    }
+
+    configurations {
+        mwe2 {
+            extendsFrom implementation
+        }
+    }
+
+    dependencies {
+        mwe2 project(':fsm-pekko-xtext-reader')
+        mwe2 project(':fsm-pekko-xtend')
+        mwe2 project(':fsm-pekko-4eyes-uml-model')
+        mwe2 'org.salgar.pekko.fsm:fsm-pekko-eclipse-dependencies:1.0.0-SNAPSHOT:repackaged'
+    }
+
+    tasks.register('generateXtextLanguage', JavaExec) {
+        def generatedFileDir = file("target/generated-sources")
+        outputs.dir generatedFileDir
+        mainClass = 'org.eclipse.emf.mwe2.launch.runtime.Mwe2Launcher'
+        classpath = configurations.mwe2
+        inputs.file('src/main/mwe2/GenerateWorkflow.mwe2').withPathSensitivity(PathSensitivity.RELATIVE)
+        outputs.dir('build/generated-sources')
+        args += "src/main/mwe2/GenerateWorkflow.mwe2"
+        args += "-p"
+        args += "rootPath=/${projectDir}/.."
+    }
+
+    generateXtext.dependsOn(generateXtextLanguage)
+    clean.dependsOn(cleanGenerateXtextLanguage)
+    spotlessJava.dependsOn(generateXtextLanguage)
+    compileJava.dependsOn(spotlessApply)
+}
+
+project(':fsm-pekko-pekkosystem') {
+    apply plugin: 'java-library'
+    apply plugin: 'scala'
+
+    dependencies {
+        api project(':fsm-pekko-base')
+        api "org.apache.pekko:pekko-actor-typed_${versions.scala.major}:${versions.pekko}"
+        api "org.apache.pekko:pekko-persistence-typed_${versions.scala.major}:${versions.pekko}"
+        api "org.apache.pekko:pekko-cluster-sharding-typed_${versions.scala.major}:${versions.pekko}"
+        implementation "org.apache.pekko:pekko-serialization-jackson_${versions.scala.major}:${versions.pekko}"
+        api "org.apache.pekko:pekko-management-cluster-http_${versions.scala.major}:${versions.pekkomanagement}"
+        api "org.apache.pekko:pekko-management-cluster-bootstrap_${versions.scala.major}:${versions.pekkomanagement}"
+        api "org.apache.pekko:pekko-discovery-kubernetes-api_${versions.scala.major}:${versions.pekkomanagement}"
+        api "org.apache.pekko:pekko-discovery_${versions.scala.major}:${versions.pekko}"
+        api "org.apache.pekko:pekko-http-core_${versions.scala.major}:${versions.pekkohttp}"
+        api "org.apache.pekko:pekko-http_${versions.scala.major}:${versions.pekkohttp}"
+        api 'org.springframework.cloud:spring-cloud-starter-kubernetes-fabric8-config'
+        api 'org.lmdbjava:lmdbjava:0.8.2'
+        api 'com.github.jnr:jnr-ffi:2.2.11'
+    }
+}
+
+project(':fsm-pekko-4eyes-statemachine') {
+    apply plugin: 'java-library'
+    apply plugin: 'scala'
+    apply plugin: 'org.xtext.xtend'
+    apply plugin: 'com.diffplug.spotless'
+
+    sourceSets {
+        main {
+            scala {
+                srcDirs = ['build/generated-sources/main/scala', 'src/main/scala', 'build/generated-sources/main/java', 'src/main/java']
+            }
+            java {
+                srcDirs = []
+            }
+        }
+        test {
+            scala {
+                srcDirs = ['build/generated-test-sources/test/scala', 'src/test/scala', 'build/generated-test-sources/test/java', 'src/test/java']
+            }
+            java {
+                srcDirs = []
+            }
+        }
+    }
+
+    configurations {
+        ajc
+        aspects
+        implementation {
+            extendsFrom aspects
+        }
+        tests {
+            extendsFrom testImplementation
+        }
+    }
+
+    task jarTests(type: Jar, dependsOn: testClasses) {
+        archiveClassifier = 'tests'
+        from sourceSets.test.output
+    }
+
+    artifacts {
+        tests jarTests
+    }
+
+    ant.lifecycleLogLevel = "DEBUG"
+
+    compileScala {
+        dependsOn configurations.ajc.getTaskDependencyFromProjectDependency(true, "compileScala")
+        options.compilerArgs << '-parameters'
+
+        doLast {
+            ant.taskdef (
+                    resource:"org/aspectj/tools/ant/taskdefs/aspectjTaskdefs.properties",
+                    classpath: configurations.ajc.asPath
+            )
+            ant.iajc(
+                    source: "1.8",
+                    target: "1.8",
+                    showWeaveInfo: "true",
+                    destDir: sourceSets.main.scala.outputDir.absolutePath,
+                    maxmem: "512m",
+                    fork: "true",
+                    inpath: sourceSets.main.scala.outputDir.absolutePath,
+                    aspectpath: configurations.aspects.asPath,
+                    classpath: configurations.aspectImplementation.asPath
+            )
+        }
+    }
+
+    dependencies {
+        ajc "org.aspectj:aspectjtools:${versions.aspectjVersion}"
+        implementation "org.aspectj:aspectjrt:${versions.aspectjVersion}"
+        api project(':fsm-pekko-base'),
+                project(':fsm-pekko-pekkosystem')
+        aspects project(':fsm-pekko-4eyes-advice')
+        api "org.apache.pekko:pekko-cluster-sharding-typed_${versions.scala.major}:${versions.pekko}"
+        api 'com.fasterxml.jackson.core:jackson-databind'
+    }
+
+    spotless {
+        scala {
+            target 'target/generated-sources/main/scala/**/*.scala'
+            scalafmt().configFile('.scalafmt.conf')
+            // optional: you can specify a specific version or config file
+            //scalafmt('0.5.1').configFile('.scalafmt.conf')
+        }
+        java {
+            target 'target/generated-sources/*/java/**/*.java'
+            //licenseHeaderFile  "$rootDir/buildSrc/CopyrightHeader.java"
+            importOrder 'java', 'javax', 'org', 'com'
+            //eclipseFormatFile "$rootDir/buildSrc/formatter.xml"
+        }
+        format 'misc', {
+            target 'src/**/*.md', 'src/**/*.xml', 'src/**/*.xsd', 'src/**/*.xsl'
+            indentWithSpaces()
+            trimTrailingWhitespace()
+            endWithNewline()
+        }
+    }
+
+    configurations {
+        mwe2 {
+            extendsFrom implementation
+        }
+        aspectImplementation {
+            extendsFrom implementation
+            canBeResolved=true
+        }
+    }
+
+    dependencies {
+        mwe2 project(':fsm-pekko-xtext-reader')
+        mwe2 project(':fsm-pekko-xtend')
+        mwe2 project(':fsm-pekko-4eyes-uml-model')
+        mwe2 'org.salgar.pekko.fsm:fsm-pekko-eclipse-dependencies:1.0.0-SNAPSHOT:repackaged'
+    }
+
+    tasks.register('generateXtextLanguage', JavaExec) {
+        def generatedFileDir = file('build/generated-sources')
+        outputs.dir generatedFileDir
+        mainClass = 'org.eclipse.emf.mwe2.launch.runtime.Mwe2Launcher'
+        classpath = configurations.mwe2
+        inputs.file('src/main/mwe2/GenerateWorkflow.mwe2').withPathSensitivity(PathSensitivity.RELATIVE)
+        args += "src/main/mwe2/GenerateWorkflow.mwe2"
+        args += "-p"
+        args += "rootPath=/${projectDir}/.."
+    }
+
+    generateXtext.dependsOn(generateXtextLanguage)
+    clean.dependsOn(cleanGenerateXtextLanguage)
+    spotlessScala.dependsOn(generateXtextLanguage)
+    compileJava.dependsOn(spotlessApply)
+    compileScala.dependsOn(spotlessApply)
+}
+
+project(':fsm-pekko-statemachine-facade') {
+    apply plugin: 'java-library'
+    apply plugin: 'scala'
+
+    dependencies {
+        api project(':fsm-pekko-pekkosystem')
+    }
+}
+
+project(':fsm-pekko-4eyes-event-adapter') {
+    apply plugin: 'java-library'
+    apply plugin: 'scala'
+
+    dependencies {
+        api project(':fsm-pekko-4eyes-statemachine'),
+                project(':fsm-pekko-4eyes-model')
+    }
+}
+
+project(':fsm-pekko-4eyes-actionguard-impl') {
+    apply plugin: 'java'
+    apply plugin: 'java-library'
+    apply plugin: 'io.freefair.lombok'
+
+    dependencies {
+        api project(':fsm-pekko-api'),
+                project(':fsm-pekko-4eyes-model'),
+                project(':fsm-pekko-base'),
+                project(':fsm-pekko-4eyes-statemachine-facade'),
+                project(':4eyes-address-check-api'),
+                project(':4eyes-credit-score-api'),
+                project(':4eyes-fraud-prevention-api'),
+                project(':4eyes-notifier-api'),
+                project(':customer-relationship-adapter')
+
+        implementation project(':fsm-pekko-4eyes-statemachine')
+        implementation 'org.springframework:spring-context'
+        implementation "org.projectlombok:lombok:${versions.lombok}"
+
+        testImplementation('org.springframework.boot:spring-boot-starter-test') {
+            exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
+        }
+    }
+
+    test {
+        useJUnitPlatform()
+    }
+}
+
+project(':fsm-pekko-4eyes-protobuf') {
+    apply plugin: 'java-library'
+    apply plugin: 'java'
+    apply plugin: 'org.xtext.xtend'
+    apply plugin: 'com.google.protobuf'
+
+    sourceSets {
+        main {
+            java {
+                srcDirs = ['src/main/java', 'build/generated-sources/main/java']
+            }
+            proto {
+                srcDir 'build/generated-sources/main/proto'
+            }
+        }
+    }
+
+    dependencies {
+        //implementation 'com.google.protobuf:protobuf-lite:3.0.0'
+        implementation 'com.google.protobuf:protobuf-java:3.19.4'
+    }
+
+    protobuf {
+        generatedFilesBaseDir = "$projectDir/build/generated-sources"
+        protoc {
+            // You still need protoc like in the non-Android case
+            artifact = 'com.google.protobuf:protoc:3.19.4'
+        }
+        generateProtoTasks {
+            all().each { task ->
+                task.dependsOn{ generateXtextLanguage }
+            }
+        }
+    }
+
+    clean {
+        delete protobuf.generatedFilesBaseDir
+    }
+
+    configurations {
+        mwe2 {
+            extendsFrom implementation
+        }
+    }
+
+    dependencies {
+        mwe2 project(':fsm-pekko-xtext-reader')
+        mwe2 project(':fsm-pekko-xtend')
+        mwe2 project(':fsm-pekko-4eyes-uml-model')
+        mwe2 'org.salgar.pekko.fsm:fsm-pekko-eclipse-dependencies:1.0.0-SNAPSHOT:repackaged'
+    }
+
+    tasks.register('generateXtextLanguage', JavaExec) {
+        def generatedFileDir = file("build/generated-sources")
+        outputs.dir generatedFileDir
+        mainClass = 'org.eclipse.emf.mwe2.launch.runtime.Mwe2Launcher'
+        classpath = configurations.mwe2
+        inputs.file('src/main/mwe2/GenerateWorkflow.mwe2').withPathSensitivity(PathSensitivity.RELATIVE)
+        outputs.dir('build/generated-sources')
+        args += "src/main/mwe2/GenerateWorkflow.mwe2"
+        args += "-p"
+        args += "rootPath=/${projectDir}/.."
+    }
+
+    generateXtext.dependsOn(generateXtextLanguage)
+    clean.dependsOn(cleanGenerateXtextLanguage)
+}
+
+project(':fsm-pekko-converter') {
+    apply plugin: 'java-library'
+    apply plugin: 'java'
+    apply plugin: 'io.freefair.lombok'
+
+    dependencies {
+        api "io.confluent:kafka-protobuf-serializer:${versions.confluent}"
+        api "org.projectlombok:lombok:${versions.lombok}"
+        implementation 'org.springframework.boot:spring-boot-autoconfigure'
+    }
+}
+
+project(':fsm-pekko-4eyes-converter') {
+    apply plugin: 'java-library'
+    apply plugin: 'java'
+    apply plugin: 'org.xtext.xtend'
+    apply plugin: 'io.freefair.lombok'
+    apply plugin: 'com.diffplug.spotless'
+
+    sourceSets {
+        main {
+            java {
+                srcDirs = ['src/main/java', 'build/generated-sources/main/java']
+            }
+        }
+    }
+
+    dependencies {
+        api project(':fsm-pekko-converter')
+        implementation project(':fsm-pekko-4eyes-protobuf'),
+                project(':fsm-pekko-4eyes-model')
+        api "io.confluent:kafka-protobuf-serializer:${versions.confluent}"
+        api "org.projectlombok:lombok:${versions.lombok}"
+        implementation 'org.springframework.boot:spring-boot-autoconfigure'
+        api "ch.qos.logback:logback-classic"
+    }
+
+    spotless {
+        java {
+            target '**/*.java'
+            //licenseHeaderFile  "$rootDir/buildSrc/CopyrightHeader.java"
+            importOrder 'java', 'javax', 'org', 'com'
+            //eclipseFormatFile "$rootDir/buildSrc/formatter.xml"
+        }
+        format 'misc', {
+            target 'src/**/*.md', 'src/**/*.xml', 'src/**/*.xsd', 'src/**/*.xsl'
+            indentWithSpaces()
+            trimTrailingWhitespace()
+            endWithNewline()
+        }
+    }
+
+    configurations {
+        mwe2 {
+            extendsFrom implementation
+        }
+    }
+
+    dependencies {
+        mwe2 project(':fsm-pekko-xtext-reader')
+        mwe2 project(':fsm-pekko-xtend')
+        mwe2 project(':fsm-pekko-4eyes-uml-model')
+        mwe2 'org.salgar.pekko.fsm:fsm-pekko-eclipse-dependencies:1.0.0-SNAPSHOT:repackaged'
+    }
+
+    tasks.register('generateXtextLanguage', JavaExec) {
+        def generatedFileDir = file("build/generated-sources")
+        outputs.dir generatedFileDir
+        mainClass = 'org.eclipse.emf.mwe2.launch.runtime.Mwe2Launcher'
+        classpath = configurations.mwe2
+        inputs.file('src/main/mwe2/GenerateWorkflow.mwe2').withPathSensitivity(PathSensitivity.RELATIVE)
+        outputs.dir('build/generated-sources')
+        args += "src/main/mwe2/GenerateWorkflow.mwe2"
+        args += "-p"
+        args += "rootPath=/${projectDir}/.."
+    }
+
+    generateXtext.dependsOn(generateXtextLanguage)
+    clean.dependsOn(cleanGenerateXtextLanguage)
+    spotlessJava.dependsOn(generateXtextLanguage)
+    compileJava.dependsOn(spotlessApply)
+}
+
+project(':fsm-pekko-command') {
+    apply plugin: 'java-library'
+    apply plugin: 'java'
+
+    dependencies {
+        api "io.confluent:kafka-protobuf-serializer:${versions.confluent}"
+        implementation "org.scala-lang:scala-library:${versions.scala.current}"
+    }
+}
+
+project(':fsm-pekko-4eyes-command') {
+    apply plugin: 'java-library'
+    apply plugin: 'java'
+    apply plugin: 'org.xtext.xtend'
+    apply plugin: 'io.freefair.lombok'
+    apply plugin: 'com.diffplug.spotless'
+
+    sourceSets {
+        main {
+            java {
+                srcDirs = ['src/main/java', 'build/generated-sources/main/java']
+            }
+        }
+    }
+
+    dependencies {
+        api project(':fsm-pekko-command')
+        implementation project(':fsm-pekko-4eyes-statemachine'),
+                project(':fsm-pekko-4eyes-protobuf'),
+                project(':fsm-pekko-4eyes-converter')
+        implementation "org.scala-lang:scala-library:${versions.scala.current}"
+        implementation 'org.springframework.boot:spring-boot-autoconfigure'
+        api "org.projectlombok:lombok:${versions.lombok}"
+    }
+
+    spotless {
+        java {
+            target '**/*.java'
+            //licenseHeaderFile  "$rootDir/buildSrc/CopyrightHeader.java"
+            importOrder 'java', 'javax', 'org', 'com'
+            //eclipseFormatFile "$rootDir/buildSrc/formatter.xml"
+        }
+        format 'misc', {
+            target 'src/**/*.md', 'src/**/*.xml', 'src/**/*.xsd', 'src/**/*.xsl'
+            indentWithSpaces()
+            trimTrailingWhitespace()
+            endWithNewline()
+        }
+    }
+
+    configurations {
+        mwe2 {
+            extendsFrom implementation
+        }
+    }
+
+    dependencies {
+        mwe2 project(':fsm-pekko-xtext-reader')
+        mwe2 project(':fsm-pekko-xtend')
+        mwe2 project(':fsm-pekko-4eyes-uml-model')
+        mwe2 'org.salgar.pekko.fsm:fsm-pekko-eclipse-dependencies:1.0.0-SNAPSHOT:repackaged'
+    }
+
+    tasks.register('generateXtextLanguage', JavaExec) {
+        def generatedFileDir = file("build/generated-sources")
+        outputs.dir generatedFileDir
+        mainClass = 'org.eclipse.emf.mwe2.launch.runtime.Mwe2Launcher'
+        classpath = configurations.mwe2
+        inputs.file('src/main/mwe2/GenerateWorkflow.mwe2').withPathSensitivity(PathSensitivity.RELATIVE)
+        outputs.dir('build/generated-sources')
+        args += "src/main/mwe2/GenerateWorkflow.mwe2"
+        args += "-p"
+        args += "rootPath=/${projectDir}/.."
+    }
+
+    generateXtext.dependsOn(generateXtextLanguage)
+    clean.dependsOn(cleanGenerateXtextLanguage)
+    spotlessJava.dependsOn(generateXtextLanguage)
+    compileJava.dependsOn(spotlessApply)
+}
+
+project(':fsm-pekko-kafka') {
+    apply plugin: 'java-library'
+    apply plugin: 'scala'
+    apply plugin: 'io.freefair.lombok'
+
+    dependencies {
+        implementation 'org.springframework.boot:spring-boot-autoconfigure'
+        api "io.confluent:kafka-protobuf-serializer:${versions.confluent}"
+        api "io.confluent:kafka-streams-protobuf-serde:${versions.confluent}"
+        implementation "org.apache.pekko:pekko-connectors-kafka-cluster-sharding_${versions.scala.major}:${versions.pekkoKafkaStream}"
+        implementation "org.apache.pekko:pekko-cluster-sharding-typed_${versions.scala.major}:${versions.pekko}"
+    }
+}
+
+project(':fsm-pekko-4eyes-kafka') {
+    apply plugin: 'java-library'
+    apply plugin: 'scala'
+    apply plugin: 'org.xtext.xtend'
+    apply plugin: 'io.freefair.lombok'
+    apply plugin: 'com.diffplug.spotless'
+
+    sourceSets {
+        main {
+            scala {
+                srcDirs = ['build/generated-sources/main/scala', 'src/main/scala']
+            }
+            java {
+                srcDirs = ['build/generated-sources/main/java', 'src/main/java']
+            }
+        }
+        test {
+            scala {
+                srcDirs = [ 'src/test/scala']
+            }
+        }
+    }
+
+    spotless {
+        scala {
+            target 'build/generated-sources/main/scala/**/*.scala'
+            scalafmt().configFile('.scalafmt.conf')
+            // optional: you can specify a specific version or config file
+            //scalafmt('0.5.1').configFile('.scalafmt.conf')
+        }
+        java {
+            target 'build/generated-sources/main/java/**/*.java'
+            //licenseHeaderFile  "$rootDir/buildSrc/CopyrightHeader.java"
+            importOrder 'java', 'javax', 'org', 'com'
+            //eclipseFormatFile "$rootDir/buildSrc/formatter.xml"
+        }
+        format 'misc', {
+            target 'src/**/*.md', 'src/**/*.xml', 'src/**/*.xsd', 'src/**/*.xsl'
+            indentWithSpaces()
+            trimTrailingWhitespace()
+            endWithNewline()
+        }
+    }
+
+    dependencies {
+        api project(':fsm-pekko-kafka'),
+                project(':fsm-pekko-4eyes-command'),
+                project(':fsm-pekko-4eyes-converter'),
+                project(':fsm-pekko-4eyes-protobuf')
+        implementation project(':fsm-pekko-4eyes-statemachine'),
+                project(':fsm-pekko-pekkosystem'),
+                project(':fsm-pekko-api')
+        implementation "org.scala-lang:scala-library:${versions.scala.current}"
+        implementation 'org.springframework.boot:spring-boot-autoconfigure'
+        implementation 'org.springframework.kafka:spring-kafka'
+        implementation "org.apache.pekko:pekko-cluster-sharding-typed_${versions.scala.major}:${versions.pekko}"
+        implementation "org.apache.pekko:pekko-connectors-kafka_${versions.scala.major}:${versions.pekkoKafkaStream}"
+        api "io.confluent:kafka-protobuf-serializer:${versions.confluent}"
+        api "io.confluent:kafka-streams-protobuf-serde:${versions.confluent}"
+        implementation "org.projectlombok:lombok:${versions.lombok}"
+        annotationProcessor "org.springframework.boot:spring-boot-configuration-processor"
+        testImplementation project(':fsm-pekko-4eyes-statemachine-facade'),
+                project(':fsm-pekko-4eyes-actionguard-impl'),
+                project(':4eyes-address-check-impl'),
+                project(':4eyes-credit-score-impl'),
+                project(':4eyes-fraud-prevention-impl'),
+                project(':customer-relationship-adapter'),
+                project(':customer-relationship-adapter-impl'),
+                project(':fsm-pekko-4eyes-advice')
+        testImplementation "org.apache.pekko:pekko-persistence-cassandra_${versions.scala.major}:${versions.pekkoCassandraPlugin}"
+        testImplementation "org.apache.pekko:pekko-connectors-cassandra_${versions.scala.major}:${versions.pekkoConnectorsAll}"
+        testImplementation "org.apache.pekko:pekko-persistence-query_${versions.scala.major}:${versions.pekko}"
+        testImplementation "org.apache.pekko:pekko-persistence-typed_${versions.scala.major}:${versions.pekko}"
+        testImplementation 'org.springframework.boot:spring-boot-starter'
+        testImplementation('org.springframework.boot:spring-boot-starter-test') {
+            exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
+        }
+        testImplementation 'org.springframework.kafka:spring-kafka-test'
+    }
+
+    configurations {
+        mwe2 {
+            extendsFrom implementation
+        }
+    }
+
+    dependencies {
+        mwe2 project(':fsm-pekko-xtext-reader')
+        mwe2 project(':fsm-pekko-xtend')
+        mwe2 project(':fsm-pekko-4eyes-uml-model')
+        mwe2 'org.salgar.pekko.fsm:fsm-pekko-eclipse-dependencies:1.0.0-SNAPSHOT:repackaged'
+    }
+
+    tasks.register('generateXtextLanguage', JavaExec) {
+        def generatedFileDir = file("build/generated-sources")
+        outputs.dir generatedFileDir
+        mainClass = 'org.eclipse.emf.mwe2.launch.runtime.Mwe2Launcher'
+        classpath = configurations.mwe2
+        inputs.file('src/main/mwe2/GenerateWorkflow.mwe2').withPathSensitivity(PathSensitivity.RELATIVE)
+        outputs.dir('build/generated-sources')
+        args += "src/main/mwe2/GenerateWorkflow.mwe2"
+        args += "-p"
+        args += "rootPath=/${projectDir}/.."
+    }
+
+    test {
+        jvmArgs "-DSEED_NODES=${props.SEED_NODES}", "-DK8SSANDRA_PASSWORD=${props.K8SSANDRA_PASSWORD}"
+        useJUnitPlatform()
+    }
+
+    generateXtext.dependsOn(generateXtextLanguage)
+    clean.dependsOn(cleanGenerateXtextLanguage)
+    spotlessScala.dependsOn(generateXtextLanguage)
+    compileJava.dependsOn(spotlessApply)
+    compileScala.dependsOn(compileJava)
+}
+
+project(':fsm-pekko-elasticsearch') {
+    apply plugin: 'java-library'
+    apply plugin: 'java'
+    apply plugin: 'io.freefair.lombok'
+
+    dependencies {
+        api 'org.springframework.boot:spring-boot-starter'
+        api 'org.springframework.data:spring-data-elasticsearch'
+        annotationProcessor "org.springframework.boot:spring-boot-configuration-processor"
+        testImplementation 'org.springframework:spring-web'
+        testImplementation 'org.springframework.boot:spring-boot-starter'
+        testImplementation "org.junit.platform:junit-platform-runner:1.8.2"
+        testImplementation('org.springframework.boot:spring-boot-starter-test') {
+            exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
+        }
+    }
+
+    test {
+        useJUnitPlatform()
+    }
+}
+
+project(':fsm-pekko-4eyes-elasticsearch-statemachine-adapter') {
+    apply plugin: 'java'
+    apply plugin: 'scala'
+    apply plugin: 'io.freefair.lombok'
+    apply plugin: 'org.xtext.xtend'
+    apply plugin: 'io.freefair.lombok'
+    apply plugin: 'com.diffplug.spotless'
+
+    sourceSets {
+        main {
+            java {
+                srcDirs = ['src/main/java', 'build/generated-sources/main/java']
+            }
+            scala {
+                srcDirs = ['build/generated-sources/main/scala', 'src/main/scala']
+            }
+        }
+    }
+
+    dependencies {
+        implementation project(':fsm-pekko-4eyes-model'),
+                project(':fsm-pekko-4eyes-statemachine')
+        implementation 'org.springframework.data:spring-data-elasticsearch'
+    }
+
+    spotless {
+        scala {
+            target 'build/generated-sources/main/scala/**/*.scala'
+            scalafmt().configFile('.scalafmt.conf')
+            // optional: you can specify a specific version or config file
+            //scalafmt('0.5.1').configFile('.scalafmt.conf')
+        }
+        java {
+            target '**/*.java'
+            //licenseHeaderFile  "$rootDir/buildSrc/CopyrightHeader.java"
+            importOrder 'java', 'javax', 'org', 'com'
+            //eclipseFormatFile "$rootDir/buildSrc/formatter.xml"
+        }
+        format 'misc', {
+            target 'src/**/*.md', 'src/**/*.xml', 'src/**/*.xsd', 'src/**/*.xsl'
+            indentWithSpaces()
+            trimTrailingWhitespace()
+            endWithNewline()
+        }
+    }
+
+    configurations {
+        mwe2 {
+            extendsFrom implementation
+        }
+    }
+
+    dependencies {
+        mwe2 project(':fsm-pekko-xtext-reader')
+        mwe2 project(':fsm-pekko-xtend')
+        mwe2 project(':fsm-pekko-4eyes-uml-model')
+        mwe2 'org.salgar.pekko.fsm:fsm-pekko-eclipse-dependencies:1.0.0-SNAPSHOT:repackaged'
+    }
+
+    tasks.register('generateXtextLanguage', JavaExec) {
+        def generatedFileDir = file("build/generated-sources")
+        outputs.dir generatedFileDir
+        mainClass = 'org.eclipse.emf.mwe2.launch.runtime.Mwe2Launcher'
+        classpath = configurations.mwe2
+        inputs.file('src/main/mwe2/GenerateWorkflow.mwe2').withPathSensitivity(PathSensitivity.RELATIVE)
+        outputs.dir('build/generated-sources')
+        args += "src/main/mwe2/GenerateWorkflow.mwe2"
+        args += "-p"
+        args += "rootPath=/${projectDir}/.."
+    }
+
+    generateXtext.dependsOn(generateXtextLanguage)
+    clean.dependsOn(cleanGenerateXtextLanguage)
+    spotlessScala.dependsOn(generateXtextLanguage)
+    spotlessJava.dependsOn(generateXtextLanguage)
+    compileJava.dependsOn(spotlessApply)
+}
+
+project(':fsm-pekko-4eyes-projections-statemachine-adapter') {
+    apply plugin: 'java-library'
+    apply plugin: 'scala'
+    apply plugin: 'io.freefair.lombok'
+    apply plugin: 'org.xtext.xtend'
+    apply plugin: 'io.freefair.lombok'
+    apply plugin: 'com.diffplug.spotless'
+
+    sourceSets {
+        main {
+            scala {
+                srcDirs = ['build/generated-sources/main/scala', 'src/main/scala']
+            }
+        }
+    }
+
+    dependencies {
+        api project(':fsm-pekko-elasticsearch'),
+                project(':fsm-pekko-4eyes-statemachine'),
+                project(':fsm-pekko-4eyes-elasticsearch-statemachine-adapter'),
+                project(':fsm-pekko-projections')
+        implementation 'org.springframework.data:spring-data-elasticsearch'
+        implementation "org.apache.pekko:pekko-projection-eventsourced_${versions.scala.major}:${versions.pekkoProjections}"
+    }
+
+    spotless {
+        scala {
+            target 'build/generated-sources/main/scala/**/*.scala'
+            scalafmt().configFile('.scalafmt.conf')
+            // optional: you can specify a specific version or config file
+            //scalafmt('0.5.1').configFile('.scalafmt.conf')
+        }
+        format 'misc', {
+            target 'src/**/*.md', 'src/**/*.xml', 'src/**/*.xsd', 'src/**/*.xsl'
+            indentWithSpaces()
+            trimTrailingWhitespace()
+            endWithNewline()
+        }
+    }
+
+    configurations {
+        mwe2 {
+            extendsFrom implementation
+        }
+    }
+
+    dependencies {
+        mwe2 project(':fsm-pekko-xtext-reader')
+        mwe2 project(':fsm-pekko-xtend')
+        mwe2 project(':fsm-pekko-4eyes-uml-model')
+        mwe2 'org.salgar.pekko.fsm:fsm-pekko-eclipse-dependencies:1.0.0-SNAPSHOT:repackaged'
+    }
+
+    tasks.register('generateXtextLanguage', JavaExec) {
+        def generatedFileDir = file("build/generated-sources")
+        outputs.dir generatedFileDir
+        mainClass = 'org.eclipse.emf.mwe2.launch.runtime.Mwe2Launcher'
+        classpath = configurations.mwe2
+        inputs.file('src/main/mwe2/GenerateWorkflow.mwe2').withPathSensitivity(PathSensitivity.RELATIVE)
+        outputs.dir('build/generated-sources')
+        args += "src/main/mwe2/GenerateWorkflow.mwe2"
+        args += "-p"
+        args += "rootPath=/${projectDir}/.."
+    }
+
+    generateXtext.dependsOn(generateXtextLanguage)
+    clean.dependsOn(cleanGenerateXtextLanguage)
+    spotlessScala.dependsOn(generateXtextLanguage)
+    compileJava.dependsOn(spotlessApply)
+}
+
+project(':fsm-pekko-projections') {
+    apply plugin: 'java-library'
+    apply plugin: 'scala'
+
+    dependencies {
+        api project(':fsm-pekko-elasticsearch'),
+                project(':fsm-pekko-pekkosystem')
+        api "org.apache.pekko:pekko-projection-eventsourced_${versions.scala.major}:${versions.pekkoProjections}"
+        api "org.apache.pekko:pekko-projection-cassandra_${versions.scala.major}:${versions.pekkoProjections}"
+        api "org.apache.pekko:pekko-persistence-cassandra_${versions.scala.major}:${versions.pekkoCassandraPlugin}"
+        api "org.apache.pekko:pekko-connectors-cassandra_${versions.scala.major}:${versions.pekkoConnectorsAll}"
+        annotationProcessor "org.springframework.boot:spring-boot-configuration-processor"
+    }
+}
+
+project(':fsm-pekko-4eyes-projections') {
+    apply plugin: 'java-library'
+    apply plugin: 'scala'
+
+    dependencies {
+        api project(':fsm-pekko-projections'),
+                project(':fsm-pekko-elasticsearch'),
+                project(':fsm-pekko-4eyes-projections-statemachine-adapter')
+        implementation project(':fsm-pekko-4eyes-statemachine')
+        annotationProcessor "org.springframework.boot:spring-boot-configuration-processor"
+    }
+}
+
+project(':fsm-pekko-4eyes-statemachine-facade') {
+    apply plugin: 'java-library'
+    apply plugin: 'scala'
+
+    dependencies {
+        api project(':fsm-pekko-4eyes-event-adapter'),
+                project(':fsm-pekko-statemachine-facade'),
+                project(':fsm-pekko-pekkosystem')
+        implementation project(':fsm-pekko-kafka'),
+                project(':fsm-pekko-4eyes-kafka'),
+                project(':fsm-pekko-4eyes-protobuf')
+        implementation "org.apache.pekko:pekko-connectors-kafka-cluster-sharding_${versions.scala.major}:${versions.pekkoKafkaStream}"
+    }
+}
+
+project(':fsm-pekko-4eyes-application') {
+    apply plugin: 'org.springframework.boot'
+    apply plugin: 'java'
+    apply plugin: 'io.freefair.lombok'
+    apply plugin: 'groovy'
+    apply plugin: 'com.google.cloud.tools.jib'
+    apply plugin: 'org.unbroken-dome.helm'
+    apply plugin: 'org.unbroken-dome.helm-publish'
+
+    dependencies {
+        implementation 'org.springframework.boot:spring-boot-starter'
+//        implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+        implementation project(':fsm-pekko-4eyes-statemachine-facade'),
+                project(':fsm-pekko-4eyes-statemachine'),
+                project(':fsm-pekko-4eyes-actionguard-impl'),
+                project(':fsm-pekko-4eyes-advice'),
+                project(':fsm-pekko-api'),
+                project(':4eyes-address-check-impl'),
+                project(':4eyes-credit-score-impl'),
+                project(':4eyes-fraud-prevention-impl'),
+                project(':4eyes-notifier-api'),
+                project(':4eyes-notifier-impl'),
+                project(':customer-relationship-adapter'),
+                project(':customer-relationship-adapter-impl'),
+                project(':fsm-pekko-4eyes-kafka'),
+                project(':fsm-pekko-4eyes-projections'),
+                project(':fsm-pekko-elasticsearch'),
+                project(':fsm-pekko-4eyes-elasticsearch-statemachine-adapter')
+
+        implementation "org.apache.pekko:pekko-persistence-cassandra_${versions.scala.major}:${versions.pekkoCassandraPlugin}"
+        implementation "org.apache.pekko:pekko-persistence-query_${versions.scala.major}:${versions.pekko}"
+        implementation "org.apache.pekko:pekko-persistence-typed_${versions.scala.major}:${versions.pekko}"
+        implementation "org.apache.pekko:pekko-cluster-sharding-typed_${versions.scala.major}:${versions.pekko}"
+        testImplementation "org.apache.pekko:pekko-serialization-jackson_${versions.scala.major}:${versions.pekko}"
+        testImplementation "org.codehaus.groovy:groovy-all:3.0.9"
+        testImplementation platform("org.spockframework:spock-bom:2.0-groovy-3.0")
+        testImplementation "org.spockframework:spock-core"
+        testImplementation "org.spockframework:spock-spring"
+        testImplementation "org.junit.platform:junit-platform-runner:1.8.2"
+
+        testImplementation('org.springframework.boot:spring-boot-starter-test') {
+            exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
+        }
+        testImplementation 'org.springframework.kafka:spring-kafka-test'
+    }
+
+    jar {
+        enabled = false
+    }
+
+    test {
+        jvmArgs "-DSEED_NODES=${props.SEED_NODES}", "-DK8SSANDRA_PASSWORD=${props.K8SSANDRA_PASSWORD}"
+        useJUnitPlatform()
+    }
+
+    jib {
+        from {
+            image = 'azul/zulu-openjdk:17.0.2-17.32.13'
+            platforms {
+                platform {
+                    architecture = 'amd64'
+                    os = 'linux'
+                }
+                platform {
+                    architecture = 'arm64'
+                    os = 'linux'
+                }
+            }
+            auth {
+                username = "${props.DOCKER_HUB_USER}"
+                password = "${props.DOCKER_HUB_PASSWORD}"
+            }
+        }
+        to {
+            image = "fsm-pekko.registry:5555/fsmpekko/${project.name}:${project.version}"
+            tags = ["${project.version}"]
+            auth {
+                username = "${props.DOCKER_UPLOAD_USER}"
+                password = "${props.DOCKER_UPLOAD_PASSWORD}"
+            }
+        }
+        extraDirectories {
+            permissions = [
+                    'var/lib/fsm_pekko_4eyes_application': '644'
+            ]
+        }
+        allowInsecureRegistries = true
+    }
+    //tasks.build.dependsOn tasks.jib
+
+    helm {
+        charts {
+            foureyes {
+                publish = true
+                chartName = 'fsm-pekko-4eyes-application'
+                chartVersion = "${project.version}"
+                sourceDir = file('helm')
+                filtering {
+                    values.put 'imageRepository', jib.to.image
+                    values.put 'imageTag', jib.to.tags.first()
+                    values.put 'appVersion', jib.to.tags.first()
+                }
+            }
+        }
+        repositories {
+            fsmpekko {
+                url 'http://localhost:57941/repository/fsm-pekko-helm/'
+                credentials {
+                    username = "${props.HELM_USER}"
+                    password = "${props.HELM_PASSWORD}"
+                }
+            }
+        }
+        publishing {
+            repositories {
+                nexus {
+                    url = uri('http://localhost:57941/')
+                    repository = 'fsm-pekko-helm'
+                    apiVersion = 'v1'
+                    credentials {
+                        username = "${props.HELM_USER}"
+                        password = "${props.HELM_PASSWORD}"
+                    }
+                }
+            }
+        }
+    }
+}
+
+project(':fsm-pekko-asciidoc') {
+    apply plugin: 'org.xtext.xtend'
+    apply plugin: 'org.asciidoctor.jvm.convert'
+    apply plugin: 'org.asciidoctor.jvm.gems'
+    apply plugin: "com.cosminpolifronie.gradle.plantuml"
+
+    repositories {
+        ruby.gems()
+    }
+
+    sourceSets {
+        main {
+            resources {
+               srcDirs  = ['target/generated-sources/docs/asciidoc', 'src/main/resources']
+            }
+        }
+    }
+
+    configurations {
+        mwe2 {
+            extendsFrom implementation
+        }
+    }
+
+    dependencies {
+        mwe2 project(':fsm-pekko-xtext-reader')
+        mwe2 project(':fsm-pekko-xtend')
+        mwe2 project(':fsm-pekko-4eyes-uml-model')
+        mwe2 'org.salgar.pekko.fsm:fsm-pekko-eclipse-dependencies:1.0.0-SNAPSHOT:repackaged'
+        asciidoctorGems 'rubygems:rouge:3.15.0'
+    }
+
+    tasks.register('generateXtextLanguage', JavaExec) {
+        mainClass = 'org.eclipse.emf.mwe2.launch.runtime.Mwe2Launcher'
+        classpath = configurations.mwe2
+        inputs.file('src/main/mwe2/GenerateWorkflow.mwe2').withPathSensitivity(PathSensitivity.RELATIVE)
+        outputs.dir('build/generated-sources')
+        args += "src/main/mwe2/GenerateWorkflow.mwe2"
+        args += "-p"
+        args += "rootPath=/${projectDir}/.."
+    }
+
+    generateXtext.dependsOn(generateXtextLanguage)
+    clean.dependsOn(cleanGenerateXtextLanguage)
+
+    asciidoctor {
+        dependsOn asciidoctorGemsPrepare
+
+        options doctype: 'book'
+
+        baseDirFollowsSourceFile()
+
+        asciidoctorj {
+            requires 'rouge'
+            attributes 'build-gradle': file('build.gradle'),
+            'sourcedir': project.sourceSets.main.java.srcDirs[0],
+            'endpoint-url': 'http://example.org',
+            'source-highlighter': 'rouge',
+            'imagesdir': 'images',
+            'toc': 'left',
+            'icons': 'font',
+            'setanchors': '',
+            'idprefix': '',
+            'idseparator': '-',
+            'docinfo': 'shared'
+        }
+    }
+
+    plantUml {
+        render input: 'target/generated-sources/docs/puml/activity/**/*.puml', output: "${project.buildDir.absolutePath}/puml/activity", format: 'png', withMetadata: false
+    }
+}
+
+def static toMajorVersion(String scalaVersion) {
+    def pattern = Pattern.compile('(\\d+\\.\\d+)\\.\\d+.*')
+    def matcher = pattern.matcher(scalaVersion)
+    if (matcher.matches()) {
+        return matcher.group(1)
+    } else {
+        throw new IllegalArgumentException("Unable to parse scala major version '$scalaVersion'.")
+    }
+}
